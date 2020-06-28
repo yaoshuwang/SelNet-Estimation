@@ -306,6 +306,15 @@ class SelNet(object):
         b_t = tf.get_variable(self.regressor_name + 'b_t', [self.tau_part_num + 1, self.unit_len], tf.float32)
         gate = tf.nn.relu(tf.multiply(gate, w_t) + b_t)
 
+        # conv with mask
+        kernel_ = tf.ones([self.unit_len], dtype=tf.float32, name=self.regressor_name + 'k')
+        kernel = tf.reshape(kernel_, [1, int(kernel_.shape[0]), 1], name=self.regressor_name + 'kernel')
+        # reshape layer
+        #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
+        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
+
+        
+
         
 
 

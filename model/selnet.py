@@ -298,6 +298,8 @@ class SelNet(object):
         return prediction, gate
 
 
+
+
     def _construct_model_quadratic(self, x_fea, x_fea_dr, tau, tridiagonalM):
         gate = self._construct_rhos(x_fea, x_fea_dr)
 
@@ -313,7 +315,15 @@ class SelNet(object):
         #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
         gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
 
+
+        # 1st value is p_0, others are z_0, z_1, ..., z_n
+        f_first = gate[:, 0]
+        Z = gate[:, 1:]
+        D = tf.matmul(tridiagonalM, Z)
+
+                
         
+
         
 
 
