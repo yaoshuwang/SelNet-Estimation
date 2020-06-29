@@ -298,6 +298,28 @@ class SelNet(object):
         return prediction, gate
 
 
+    def _partition_threshold_quadratic(self, x_fea, x_fea_dr, tau, eps=1e-6):
+        # first concat x
+        new_x = tf.concat([x_fea, x_fea_dr], 1)
+        out = tf.layers.dense(inputs=new_x, units=self.hidden_units[0], activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_1')
+        out = tf.layers.dense(inputs=out, units=self.hidden_units[1], activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_2')
+
+        out = tf.layers.dense(inputs=out, units=self.tau_part_num, activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_3')
+
+        if self.partition_option == 'softmax':
+            dist_tau = tf.nn.softmax(out)
+        elif self.partition_option == 'l2':
+            out = tf.multiply(out, out) + eps
+            norm = tf.expand_dims(tf.reduce_sum(out, 1), 1)
+            norm = tf.tile(norm, [1, self.tau_part_num])
+            dist_tau = tf.truediv(out, norm)
+        else:
+            raise ValueError('wrong partition option')
+
+
 
 
     def _construct_model_quadratic(self, x_fea, x_fea_dr, tau, tridiagonalM):
