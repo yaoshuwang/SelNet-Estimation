@@ -319,7 +319,8 @@ class SelNet(object):
         else:
             raise ValueError('wrong partition option')
 
-
+        partition_tau = tf.cumsum(dist_tau, 1) * self.tau_max
+        return dist_tau, partition_tau
 
 
     def _construct_model_quadratic(self, x_fea, x_fea_dr, tau, tridiagonalM):
@@ -342,12 +343,23 @@ class SelNet(object):
         f_first = gate[:, 0]
         Z = gate[:, 1:]
         D = tf.matmul(tridiagonalM, Z)
+        dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr, tau)
+        # delta interpolation points
+        DeltaP = tf.multiply(D, dist_tau) / 2.0
 
-                
-        
+        Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
+        indices = tf.searchsorted(partition_tau, tau, side='right')
+        indices = tf.sequeeze(indices) - 1
+        mask = tf.one_hot(indices, self.tau_part_num + 1)
+        zeros = tf.zeros([DeltaP.get_shape()[0], 1])
+        Z = tf.concat([zeros, Z], 1)
+        Z_off = tf.concat([Z[:, 1:], Z[:, :1]], 1)
 
-        
+        # put all these together
+        P = tf.multiply(Z, tau - partition_tau) + 0.5 * (Z_off - Z) / dist_tau * (tau - partition_tau) * (tau - partition_tau) + Px
 
+        P = tf.reduce_sum(tf.multiply(P, mask), 1)
+        return P
 
     def predict_vae_dnn(self, test_X, test_tau):
         ''' Prediction
