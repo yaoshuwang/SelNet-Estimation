@@ -9,9 +9,15 @@ from selnet import *
 loss_option = 'huber_log'
 partition_option = 'l2'
 
+test_file = '/data/yaoshuw/data_spherical/face_embedding/face_d128_2M_testingDataL_smallSel-mixlabels.npy'
+valid_file = '/data/yaoshuw/data_spherical/face_embedding/face_d128_2M_validationDataL_smallSel-mixlabels.npy'
+dataFile = '/data/yaoshuw/data_spherical/face_embedding/face_d128_2M_trainingDataL_smallSel-mixlabels.npy'
+
+'''
 dataFile = '../../data/face/train/face_trainingData.npy'
 test_file = '../../data/face/train/face_testingData.npy'
 valid_file = '../../data/face/train/face_valdiationData.npy'
+'''
 
 x_dim = 128
 x_reducedim = 80
@@ -93,6 +99,6 @@ regressor = SelNet(hidden_units, vae_hidden_units, batch_size, epochs, epochs_va
 # change spline type to quad
 regressor.change_spline_type('selnet_quad')
 
-regressor.train(train_original_X, train_tau, train_Y, valid_original_X, valid_tau, valid_Y, test_original_X, test_tau, test_Y)
+regressor.train(train_original_X, train_tau[:, :1], train_Y, valid_original_X, valid_tau[:, :1], valid_Y, test_original_X, test_tau[:, :1], test_Y)
 
 

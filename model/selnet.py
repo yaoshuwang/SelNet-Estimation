@@ -360,7 +360,6 @@ class SelNet(object):
         #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
         gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
 
-
         # quad:
         trid = self.tridiagonal(self.tau_part_num + 1)
 
@@ -369,10 +368,11 @@ class SelNet(object):
         Z = gate[:, 1:]
         Z_zeros = tf.fill([tf.shape(Z)[0], 1], 0.0)
         Z = tf.concat([Z_zeros, Z], 1)
+        print('Z : ------------------', tf.shape(Z))
         D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr)
-        DeltaP = tf.multiply(D[:, 1:], delta_tau) / 2.0
+        DeltaP = tf.multiply(D[:, 1:], dist_tau) / 2.0
         Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
 
         tau_first = tf.fill([tf.shape(partition_tau)[0], 1], 0.0)
@@ -386,7 +386,7 @@ class SelNet(object):
         
         P = tf.reduce_sum(tf.multiply(P, mask), 1)
 
-        return P
+        return P, gate
 
     def predict_vae_dnn(self, test_X, test_tau):
         ''' Prediction
@@ -685,7 +685,8 @@ class SelNet(object):
         x_input = tf.placeholder(dtype=tf.float32, shape=[None, self.original_x_dim], name=self.regressor_name + 'original_X')
 
         # tau_input is an one-hot vector -- maybe useless
-        tau_input = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_part_num], name=self.regressor_name + 'tau')
+        # tau_input = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_part_num], name=self.regressor_name + 'tau')
+        tau_input = tf.placeholder(dtype=tf.float32, shape=[None, 1], name=self.regressor_name + 'tau')
 
         target = tf.placeholder(dtype=tf.float32, shape=[None, 1], name=self.regressor_name + 'Target')
         target_taus = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_max], name=self.regressor_name + 'Target_taus')
