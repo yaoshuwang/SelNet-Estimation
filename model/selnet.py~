@@ -30,7 +30,7 @@ def __eval__(predictions, labels):
     mse = mean_squared_error(labels, predictions)
     mae = mean_absolute_error(labels, predictions)
     mape = mean_absolute_percentage_error(labels, predictions)
-    return (mse, mae, mape)
+    return (mse, mape)
 
 
 # Define custom py_func which takes also a grad op as argument:
