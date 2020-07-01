@@ -27,7 +27,7 @@ train_data = np.load(dataFile)
 test_data = np.load(test_file)
 valid_data = np.load(valid_file)
 
-tau_part_num = 50
+tau_part_num = 30
 
 train_original_X = np.array(train_data[:, :x_dim], dtype=np.float32)
 train_tau_ = []
@@ -72,13 +72,13 @@ valid_Y = np.array(valid_data[:, -1], dtype=np.float32)
 unit_len = 100
 max_tau = 1 #54.0
 
-hidden_units = [512, 512, 512, 256]
+hidden_units = [512, 512, 256, 256]
 vae_hidden_units = [512, 256, 128]
 
 batch_size = 512
 epochs = 1500
-epochs_vae = 100
-learning_rate = 0.00003
+epochs_vae = 50 #100
+learning_rate = 0.0001
 log_option = False
 tau_embedding_size = 5
 original_x_dim = train_original_X.shape[1]
@@ -98,7 +98,9 @@ regressor = SelNet(hidden_units, vae_hidden_units, batch_size, epochs, epochs_va
 
 # change spline type to quad
 regressor.change_spline_type('selnet_quad')
+#regressor.change_spline_type('selnet_linear')
 
 regressor.train(train_original_X, train_tau[:, :1], train_Y, valid_original_X, valid_tau[:, :1], valid_Y, test_original_X, test_tau[:, :1], test_Y)
+#regressor.train(train_original_X, train_tau, train_Y, valid_original_X, valid_tau, valid_Y, test_original_X, test_tau, test_Y)
 
 

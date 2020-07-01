@@ -10,5 +10,5 @@ resultFile='./info_face_d128_2M_smallSel_huber_log_kdd.txt'
 
 > ${resultFile}
 
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=6
 python3 train_face_d128_2M_smallSel_huber_log.py >> ${resultFile}
