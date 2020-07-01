@@ -343,7 +343,7 @@ class SelNet(object):
         return tf.expand_dims(tf.scatter_nd(idx, values, [n, n]), 0)
 
 
-    def _construct_model_quadratic(self, x_fea, x_fea_dr, tau):
+    def _construct_model_quadratic(self, x_fea, x_fea_dr, tau, trid):
         ''' quad spline
         '''
         gate = self._construct_rhos(x_fea, x_fea_dr)
@@ -361,14 +361,13 @@ class SelNet(object):
         gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
 
         # quad:
-        trid = self.tridiagonal(self.tau_part_num + 1)
+        #trid = self.tridiagonal(self.tau_part_num + 1)
 
         # 1st value is p_0, others are z_0, z_1, ..., z_n
         f_first = gate[:, :1]
         Z = gate[:, 1:]
         Z_zeros = tf.fill([tf.shape(Z)[0], 1], 0.0)
         Z = tf.concat([Z_zeros, Z], 1)
-        print('Z : ------------------', tf.shape(Z))
         D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr)
@@ -716,7 +715,8 @@ class SelNet(object):
 
         vae_loss, x_input_dr = self.__ae__(x_input)
 
-        predictions_tensor, gate_tensor = self._construct_model_quadratic(x_input, x_input_dr, tau_input)
+        trid = self.tridiagonal(self.tau_part_num + 1)
+        predictions_tensor, gate_tensor = self._construct_model_quadratic(x_input, x_input_dr, tau_input, trid)
 
         #loss = vae_loss + tf.losses.mean_squared_error(predictions=tf.log(predictions_tensor + 1), labels=tf.log(target + 1))
         #loss = tf.losses.mean_squared_error(predictions=predictions_tensor, labels=target)
