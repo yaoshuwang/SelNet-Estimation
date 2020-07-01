@@ -35,10 +35,10 @@ def __eval__(predictions, labels):
 
 # Define custom py_func which takes also a grad op as argument:
 def py_func(func, inp, Tout, stateful=True, name=None, grad=None):
-    
+
     # Need to generate a unique name to avoid duplicates:
     rnd_name = 'PyFuncGrad' + str(np.random.randint(0, 1E+8))
-    
+
     tf.RegisterGradient(rnd_name)(grad)  # see _MySquareGrad for grad example
     g = tf.get_default_graph()
     with g.gradient_override_map({"PyFunc": rnd_name}):
@@ -46,7 +46,7 @@ def py_func(func, inp, Tout, stateful=True, name=None, grad=None):
 
 # Def custom square function using np.square instead of tf.square:
 def myround(x, name=None):
-    
+
     with ops.op_scope([x], name, "Myround") as name:
         sqr_x = py_func(np.round,
                         [x],
@@ -145,7 +145,7 @@ class SelNet(object):
                               activation=tf.nn.elu, name=self.regressor_name + 'vae_fc_e3')
 
         # generate hidden layer z
-        z_mu = tf.layers.dense(inputs=fc3, units=self._vae_n_z, 
+        z_mu = tf.layers.dense(inputs=fc3, units=self._vae_n_z,
                             activation=None, name=self.regressor_name + 'vae_fc_e4')
 
         # hidden layer
@@ -223,7 +223,7 @@ class SelNet(object):
 
         out = tf.layers.dense(inputs=out, units=self.hidden_units[3],
                               activation=tf.nn.relu, name=self.regressor_name + 'fc_4')
-        
+
         # 4th embedding
         rho_4 = tf.layers.dense(inputs=out, units=self.hidden_unit_len * (self.tau_part_num + 1),
                             activation=tf.nn.relu, name=self.regressor_name + 'embed_4')
@@ -237,7 +237,7 @@ class SelNet(object):
         gate = rhos[0]
         for hidden_id in range(1, 4, 1):
             gate = tf.concat([gate, rhos[hidden_id]], 2)
- 
+
         return gate
 
 
@@ -266,7 +266,7 @@ class SelNet(object):
         residue_tau = tf.nn.relu(tau - accum_tau * self.max_tau)
         #residue_tau_s = tf.manip.roll(residue_tau, shift=-1, axis=1)
         residue_tau_s = residue_tau[:, 1:]
-        residue_tau_s = tf.concat([residue_tau_s, tf.expand_dims(tf.zeros(self.input_num), axis=1)], 1) 
+        residue_tau_s = tf.concat([residue_tau_s, tf.expand_dims(tf.zeros(self.input_num), axis=1)], 1)
 
         precent_tau = tf.divide(tf.nn.relu(residue_tau - residue_tau_s), dist_tau * self.max_tau)
 
@@ -276,20 +276,20 @@ class SelNet(object):
 
 
     def _construct_model(self, x_fea, x_fea_dr, tau):
-        
+
         gate = self._construct_rhos(x_fea, x_fea_dr)
 
         # integrate
         w_t = tf.get_variable(self.regressor_name + 'w_t', [self.tau_part_num + 1, self.unit_len], tf.float32)
         b_t = tf.get_variable(self.regressor_name + 'b_t', [self.tau_part_num + 1, self.unit_len], tf.float32)
-        gate = tf.nn.relu(tf.multiply(gate, w_t) + b_t) 
+        gate = tf.nn.relu(tf.multiply(gate, w_t) + b_t)
 
         # conv with mask
         kernel_ = tf.ones([self.unit_len], dtype=tf.float32, name=self.regressor_name + 'k')
         kernel = tf.reshape(kernel_, [1, int(kernel_.shape[0]), 1], name=self.regressor_name + 'kernel')
         # reshape layer
         #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
-        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
+        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )
 
         # narrow down the domain of Delta Y
         tau_gate = self._partition_threshold(x_fea, x_fea_dr, tau)
@@ -358,7 +358,7 @@ class SelNet(object):
         kernel = tf.reshape(kernel_, [1, int(kernel_.shape[0]), 1], name=self.regressor_name + 'kernel')
         # reshape layer
         #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
-        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )  
+        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )
 
         # quad:
         #trid = self.tridiagonal(self.tau_part_num + 1)
@@ -371,7 +371,8 @@ class SelNet(object):
         D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr)
-        DeltaP = tf.multiply(D[:, 1:], dist_tau) / 2.0
+        H = dist_tau * tau_max
+        DeltaP = tf.multiply(D[:, 1:], H) / 2.0
         Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
 
         tau_first = tf.fill([tf.shape(partition_tau)[0], 1], 0.0)
@@ -381,8 +382,8 @@ class SelNet(object):
         mask = tf.one_hot(indices, self.tau_part_num)
 
         tau_exp = tf.tile(tau, [1, self.tau_part_num])
-        P = tf.multiply(Z[:, :-1], tau_exp - partition_tau_) + 0.5 * (Z[:, 1:] - Z[:, :-1]) / dist_tau * (tau_exp - partition_tau_) ** 2 + Px[:, :-1]
-        
+        P = tf.multiply(Z[:, :-1], tau_exp - partition_tau_) + 0.5 * (Z[:, 1:] - Z[:, :-1]) / H * ((tau_exp - partition_tau_) ** 2) + Px[:, :-1]
+
         P = tf.reduce_sum(tf.multiply(P, mask), 1)
 
         return P, gate
@@ -411,14 +412,14 @@ class SelNet(object):
             saver.restore(sess, self.model_file)
             # make prediction
             startTime = timer()
-            predictions = sess.run(predictions_tensor, 
-                            feed_dict={x_input: test_X, 
+            predictions = sess.run(predictions_tensor,
+                            feed_dict={x_input: test_X,
                                             tau_input: test_tau,
                                             self.bn_phase: 0,
                                             self.keep_prob: 1.0,
                                             self.input_num:test_X.shape[0],
                                             self.vae_option: 0})
-            
+
             if self.log_option:
                 predictions = np.hstack(predictions)
                 predictions = np.exp(predictions)
@@ -441,12 +442,12 @@ class SelNet(object):
 
         target = tf.placeholder(dtype=tf.float32, shape=[None, 1], name=self.regressor_name + 'Target')
         target_taus = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_max], name=self.regressor_name + 'Target_taus')
-        
+
         # to control option of batch normalization
         self.bn_phase = tf.placeholder(dtype=tf.bool, name=self.regressor_name + 'Phase')
 
         # add dropout to avoid overfitting
-        self.keep_prob = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'Dropout')       
+        self.keep_prob = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'Dropout')
 
         # input number
         self.input_num = tf.placeholder(dtype=tf.int32, name=self.regressor_name + 'input_num')
@@ -456,7 +457,7 @@ class SelNet(object):
         # set up learning rate
         self.learning_rate_vae = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_vae')
         self.learning_rate_nn = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_nn')
- 
+
         # if use log, then process log operation
         if self.log_option:
             train_y = np.array(np.log(train_y + 1), dtype=np.float32)
@@ -527,7 +528,7 @@ class SelNet(object):
         with tf.Session(config=session_config) as sess:
             #with tf.Session() as sess:
             sess.run(init)
-            
+
             # 1. first initialize VAE (unsupervised)
             learning_rate_vae_ = self.learning_rate
             decay_rate, decay_step = 0.96, 5
@@ -543,7 +544,7 @@ class SelNet(object):
                     if b % 50 == 0:
                         eval_loss = sess.run(vae_loss, feed_dict={x_input: batch_X})
                         print('VAE Epoch: {}, batch: {}, loss: {}'.format(epoch, b, eval_loss))
-                       
+
 
             # 2. fit all the training data to estimate
             learning_rate_nn_ = self.learning_rate
@@ -553,7 +554,7 @@ class SelNet(object):
                 n_batches = int(train_X.shape[0] / self.batch_size) + 1
                 for b in range(n_batches):
                     # get current batch
-                    batch_original_X, batch_tau, batch_y = self.getBatch_(b, 
+                    batch_original_X, batch_tau, batch_y = self.getBatch_(b,
                             self.batch_size, train_X, train_tau, train_y)
                     # batch_init_indices = np.zeros(self.batch_size, dtype=np.int32)
                     sess.run(optimizer, feed_dict={x_input: batch_original_X,
@@ -571,7 +572,7 @@ class SelNet(object):
 
                     # check points
                     if b % 50 == 0:
-                        eval_loss = sess.run(loss, feed_dict={x_input: batch_original_X, 
+                        eval_loss = sess.run(loss, feed_dict={x_input: batch_original_X,
                                                     tau_input: batch_tau,
                                                     #target: batch_y[:, -1][:, np.newaxis],
                                                     #target_taus: batch_y[:, :-1],
@@ -605,7 +606,7 @@ class SelNet(object):
                     for b_ in range(n_batch_test):
                         batch_test_original_X, batch_test_tau, batch_test_y = self.getBatch_(b_,
                                         self.batch_size, test_X, test_tau, test_y)
-                        predictions_batch = sess.run(predictions_tensor, 
+                        predictions_batch = sess.run(predictions_tensor,
                                         feed_dict={x_input: batch_test_original_X,
                                                     tau_input: batch_test_tau,
                                                     self.bn_phase: 0,
@@ -624,7 +625,7 @@ class SelNet(object):
                         predictions = np.exp(predictions)
                     predictions = np.hstack(predictions)
                     test_y_labels = np.hstack(test_y)
-                    
+
                     #predictions = np.array(predictions, dtype=np.float64)
                     #test_y_labels = np.array(test_y_labels, dtype=np.float64)
                     print('Test Epoch: {}, loss: {}'.format(i, __eval__(predictions, test_y_labels)))
@@ -661,7 +662,7 @@ class SelNet(object):
                         valid_predictions = np.exp(valid_predictions)
                     valid_predictions = np.hstack(valid_predictions)
                     valid_y_labels = np.hstack(valid_y)
-                    
+
                     #predictions = np.array(predictions, dtype=np.float64)
                     #test_y_labels = np.array(test_y_labels, dtype=np.float64)
                     print('Valid Epoch: {}, loss: {}'.format(i, __eval__(valid_predictions, valid_y_labels)))
@@ -689,12 +690,12 @@ class SelNet(object):
 
         target = tf.placeholder(dtype=tf.float32, shape=[None, 1], name=self.regressor_name + 'Target')
         target_taus = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_max], name=self.regressor_name + 'Target_taus')
-        
+
         # to control option of batch normalization
         self.bn_phase = tf.placeholder(dtype=tf.bool, name=self.regressor_name + 'Phase')
 
         # add dropout to avoid overfitting
-        self.keep_prob = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'Dropout')       
+        self.keep_prob = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'Dropout')
 
         # input number
         self.input_num = tf.placeholder(dtype=tf.int32, name=self.regressor_name + 'input_num')
@@ -704,7 +705,7 @@ class SelNet(object):
         # set up learning rate
         self.learning_rate_vae = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_vae')
         self.learning_rate_nn = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_nn')
- 
+
         # if use log, then process log operation
         if self.log_option:
             train_y = np.array(np.log(train_y + 1), dtype=np.float32)
@@ -776,7 +777,7 @@ class SelNet(object):
         with tf.Session(config=session_config) as sess:
             #with tf.Session() as sess:
             sess.run(init)
-            
+
             # 1. first initialize VAE (unsupervised)
             learning_rate_vae_ = self.learning_rate
             decay_rate, decay_step = 0.96, 5
@@ -792,7 +793,7 @@ class SelNet(object):
                     if b % 50 == 0:
                         eval_loss = sess.run(vae_loss, feed_dict={x_input: batch_X})
                         print('VAE Epoch: {}, batch: {}, loss: {}'.format(epoch, b, eval_loss))
-                       
+
 
             # 2. fit all the training data to estimate
             learning_rate_nn_ = self.learning_rate
@@ -802,7 +803,7 @@ class SelNet(object):
                 n_batches = int(train_X.shape[0] / self.batch_size) + 1
                 for b in range(n_batches):
                     # get current batch
-                    batch_original_X, batch_tau, batch_y = self.getBatch_(b, 
+                    batch_original_X, batch_tau, batch_y = self.getBatch_(b,
                             self.batch_size, train_X, train_tau, train_y)
                     # batch_init_indices = np.zeros(self.batch_size, dtype=np.int32)
                     sess.run(optimizer, feed_dict={x_input: batch_original_X,
@@ -820,7 +821,7 @@ class SelNet(object):
 
                     # check points
                     if b % 50 == 0:
-                        eval_loss = sess.run(loss, feed_dict={x_input: batch_original_X, 
+                        eval_loss = sess.run(loss, feed_dict={x_input: batch_original_X,
                                                     tau_input: batch_tau,
                                                     #target: batch_y[:, -1][:, np.newaxis],
                                                     #target_taus: batch_y[:, :-1],
@@ -847,14 +848,14 @@ class SelNet(object):
 
                 # evaluate for testing data
                 if i % 10 == 0 or ((i + 1) == self.epochs):
-                    
+
                     # test !!!
                     # split original X, dimreduce X, and threshold
                     n_batch_test = int(test_X.shape[0] / self.batch_size) + 1
                     for b_ in range(n_batch_test):
                         batch_test_original_X, batch_test_tau, batch_test_y = self.getBatch_(b_,
                                         self.batch_size, test_X, test_tau, test_y)
-                        predictions_batch = sess.run(predictions_tensor, 
+                        predictions_batch = sess.run(predictions_tensor,
                                         feed_dict={x_input: batch_test_original_X,
                                                     tau_input: batch_test_tau,
                                                     self.bn_phase: 0,
@@ -873,7 +874,7 @@ class SelNet(object):
                         predictions = np.exp(predictions)
                     predictions = np.hstack(predictions)
                     test_y_labels = np.hstack(test_y)
-                    
+
                     #predictions = np.array(predictions, dtype=np.float64)
                     #test_y_labels = np.array(test_y_labels, dtype=np.float64)
                     print('Test Epoch: {}, loss: {}'.format(i, __eval__(predictions, test_y_labels)))
@@ -884,7 +885,7 @@ class SelNet(object):
                     #save_file = './test/test_customDNN_predictions_labels_epoch_' + str(i)
                     save_file = self.test_data_predictions_labels_file + str(i)
                     np.save(save_file, L)
-                    
+
                     # valid !!!
                     # split original X, dimreduce X, and threshold
                     n_batch_valid = int(valid_X.shape[0] / self.batch_size) + 1
@@ -910,7 +911,7 @@ class SelNet(object):
                         valid_predictions = np.exp(valid_predictions)
                     valid_predictions = np.hstack(valid_predictions)
                     valid_y_labels = np.hstack(valid_y)
-                    
+
                     #predictions = np.array(predictions, dtype=np.float64)
                     #test_y_labels = np.array(test_y_labels, dtype=np.float64)
                     print('Valid Epoch: {}, loss: {}'.format(i, __eval__(valid_predictions, valid_y_labels)))
