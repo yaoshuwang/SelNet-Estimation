@@ -371,7 +371,7 @@ class SelNet(object):
         D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr)
-        H = dist_tau * tau_max
+        H = dist_tau * self.tau_max
         DeltaP = tf.multiply(D[:, 1:], H) / 2.0
         Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
 
