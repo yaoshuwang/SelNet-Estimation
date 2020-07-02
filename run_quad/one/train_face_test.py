@@ -4,7 +4,7 @@ import os
 import math
 
 sys.path.append('../../model/')
-from selnet import *
+from selnet_bak import *
 
 loss_option = 'huber_log'
 partition_option = 'l2'

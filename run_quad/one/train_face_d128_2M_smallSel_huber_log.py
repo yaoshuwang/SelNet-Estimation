@@ -77,7 +77,7 @@ vae_hidden_units = [512, 256, 128]
 
 batch_size = 512
 epochs = 1500
-epochs_vae = 50 #100
+epochs_vae = 1 #50 #100
 learning_rate = 0.0001
 log_option = False
 tau_embedding_size = 5

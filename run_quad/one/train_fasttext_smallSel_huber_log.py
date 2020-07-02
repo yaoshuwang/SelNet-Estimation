@@ -9,10 +9,15 @@ from selnet import *
 loss_option = 'huber_log'
 partition_option = 'l2'
 
+test_file = '/data/yaoshuw/data_spherical/fasttext/smallSel/fasttext_testingDataL_smallSel-mixlabels.npy'
+valid_file = '/data/yaoshuw/data_spherical/fasttext/smallSel/fasttext_validationDataL_smallSel-mixlabels.npy'
+dataFile = '/data/yaoshuw/data_spherical/fasttext/smallSel/fasttext_trainingDataL_smallSel-mixlabels.npy'
+
+'''
 dataFile = '../../data/fasttext_eu/train/fasttext_eu_trainingData.npy'
 test_file = '../../data/fasttext_eu/train/fasttext_eu_testingData.npy'
 valid_file = '../../data/fasttext_eu/train/fasttext_eu_valdiationData.npy'
-
+'''
 
 x_dim = 300
 x_reducedim = 80
@@ -72,8 +77,8 @@ vae_hidden_units = [512, 256, 256]
 
 batch_size = 512
 epochs = 1500
-epochs_vae = 100
-learning_rate = 0.00002
+epochs_vae = 10 #100
+learning_rate = 0.0001
 log_option = False
 tau_embedding_size = 5
 original_x_dim = train_original_X.shape[1]
@@ -91,6 +96,12 @@ regressor = SelNet(hidden_units, vae_hidden_units, batch_size, epochs, epochs_va
                          test_data_predictions_labels_file, valid_data_predictions_labels_file, regression_name, 
                          regression_model_dir, unit_len, max_tau, tau_part_num, partition_option, loss_option)
 
-regressor.train_vae_dnn(train_original_X, train_tau, train_Y, valid_original_X, valid_tau, valid_Y)
+
+# change spline type to quad
+regressor.change_spline_type('selnet_quad')
+#regressor.change_spline_type('selnet_linear')
+
+regressor.train(train_original_X, train_tau[:, :1], train_Y, valid_original_X, valid_tau[:, :1], valid_Y, test_original_X, test_tau[:, :1], test_Y)
+#regressor.train(train_original_X, train_tau, train_Y, valid_original_X, valid_tau, valid_Y, test_original_X, test_tau, test_Y)
 
 

@@ -388,7 +388,6 @@ class SelNet(object):
         # expand dim
         prediction = tf.expand_dims(prediction, 1)
 
-
         return prediction, gate
 
     def predict_vae_dnn(self, test_X, test_tau):
