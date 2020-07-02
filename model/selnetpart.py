@@ -322,7 +322,7 @@ class SelNetPart(object):
         else:
             raise ValueError('wrong partition option')
 
-        partition_tau = tf.cumsum(dist_tau, 1) * self.tau_max
+        partition_tau = tf.cumsum(dist_tau, 1) * self.max_tau
         return dist_tau, partition_tau
 
 
@@ -366,7 +366,7 @@ class SelNetPart(object):
         D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr, expert_name)
-        H = dist_tau * self.tau_max
+        H = dist_tau * self.max_tau
         DeltaP = tf.multiply(D[:, 1:], H) / 2.0
         Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
 
