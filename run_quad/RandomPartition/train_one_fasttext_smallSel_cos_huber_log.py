@@ -100,8 +100,8 @@ vae_hidden_units = [512, 256, 256]
 
 batch_size = 512 #1024
 epochs = 1500
-epochs_vae = 100
-learning_rate = 0.000005
+epochs_vae = 10 #100
+learning_rate = 0.00001
 log_option = False
 tau_embedding_size = 5
 original_x_dim = train_original_X.shape[1]
@@ -114,13 +114,16 @@ regression_model_dir = './model_dir_fasttext_smallSel_Cosine_huber_log_greedy_cl
 
 regressor = SelNetPart(hidden_units, vae_hidden_units, batch_size, epochs, epochs_vae,
                             learning_rate, log_option, tau_embedding_size, original_x_dim, dimreduce_x_dim,
-                            test_data_predictions_labels_file, valid_data_predictions_labels_file, 
+                            test_data_predictions_labels_file, valid_data_predictions_labels_file,
                             regression_name, regression_model_dir, unit_len,
                             max_tau, tau_part_num, leaf_num, partition_option, loss_option)
 
 # train
-regressor.train_vae_dnn(train_original_X, train_mapping, train_taus, train_y, 
+regressor.train_vae_dnn(train_original_X, train_mapping, train_taus, train_y,
                         valid_original_X, valid_mapping, valid_taus, valid_y)
 
+# change spline type to quad
+regressor.change_spline_type('selnet_quad')
+regressor.train(train_original_X, train_mapping, train_taus[:, :1], train_y, valid_original_X, valid_mapping, valid_taus[:, :1], valid_y, test_original_X, test_mapping, test_taus[:, :1], test_y)
 
 
