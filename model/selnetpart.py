@@ -89,6 +89,13 @@ class SelNetPart(object):
         self.leaf_num = leaf_num
         self.loss_option = loss_option
 
+        self.spline_type = 'selnet_linear'
+
+
+    # change spline type to quad
+    def change_spline_type(self, spline_type):
+        self.spline_type = spline_type
+
 
     def expert_model(self, x_input, x_input_dr, tau_gate, mapping, target_leaf, expert_name, expert_id):
         ''' One expert deals with one leaf.
@@ -106,6 +113,25 @@ class SelNetPart(object):
             raise ValueError('Wrong Loss Function Option')
 
         return loss, predictions_tensor
+
+
+    def expert_model_quad(self, x_input, x_input_dr, tau_gate, mapping, target_leaf, expert_name, expert_id, trid):
+        ''' One expert deals with one leaf using quad spline
+        '''
+        predictions_tensor, gate_tensor = self._construct_model_quadratic(x_input, x_input_dr, tau_gate, trid, expert_name)
+        predictions_tensor = tf.multiply(predictions_tensor, mapping[:, expert_id: expert_id + 1])
+        if self.loss_option == 'msle':
+            loss = tf.losses.mean_squared_error(predictions=tf.log(predictions_tensor + 1),
+                                                   labels=tf.log(target_leaf + 1))
+        elif self.loss_option == 'huber':
+            loss = tf.losses.huber_loss(labels=target_leaf, predictions=predictions_tensor, delta=1.345)
+        elif self.loss_option == 'huber_log':
+            loss = tf.losses.huber_loss(labels=tf.log(target_leaf + 1), predictions=tf.log(predictions_tensor + 1), delta=1.345)
+        else:
+            raise ValueError('Wrong Loss Function Option')
+
+        return loss, predictions_tensor
+
 
     def __ae__(self, x_input, expert_name):
         '''
@@ -275,6 +301,91 @@ class SelNetPart(object):
         return prediction, gate
 
 
+    def _partition_threshold_quadratic(self, x_fea, x_fea_dr, expert_name, eps=1e-6):
+       # first concat x
+        new_x = tf.concat([x_fea, x_fea_dr], 1)
+        out = tf.layers.dense(inputs=new_x, units=self.hidden_units[0], activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_1_' + expert_name)
+        out = tf.layers.dense(inputs=out, units=self.hidden_units[1], activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_2_' + expert_name)
+
+        out = tf.layers.dense(inputs=out, units=self.tau_part_num, activation=tf.nn.elu,
+                              name=self.regressor_name + 'tau_part_3_' + expert_name)
+
+        if self.partition_option == 'softmax':
+            dist_tau = tf.nn.softmax(out)
+        elif self.partition_option == 'l2':
+            out = tf.multiply(out, out) + eps
+            norm = tf.expand_dims(tf.reduce_sum(out, 1), 1)
+            norm = tf.tile(norm, [1, self.tau_part_num])
+            dist_tau = tf.truediv(out, norm)
+        else:
+            raise ValueError('wrong partition option')
+
+        partition_tau = tf.cumsum(dist_tau, 1) * self.tau_max
+        return dist_tau, partition_tau
+
+
+    def tridiagonal(self, n):
+        r = tf.range(n)
+        diag = tf.fill([n], 1.0)
+        sub = tf.fill([n-1], 1.0)
+        sup = tf.fill([n-1], 0.0)
+        ii = tf.concat([r, r[1:], r[:-1]], axis=0)
+        jj = tf.concat([r, r[:-1], r[1:]], axis=0)
+        idx = tf.stack([ii, jj], axis=1)
+        values = tf.concat([diag, sub, sup], axis=0)
+        return tf.expand_dims(tf.scatter_nd(idx, values, [n, n]), 0)
+
+
+    def _construct_model_quadratic(self, x_fea, x_fea_dr, tau, trid, expert_name):
+        ''' quad spline
+        '''
+        gate = self._construct_rhos(x_fea, x_fea_dr, expert_name)
+
+        # integrate
+        w_t = tf.get_variable(self.regressor_name + 'w_t_' + expert_name, [self.tau_part_num + 1, self.unit_len], tf.float32)
+        b_t = tf.get_variable(self.regressor_name + 'b_t_' + expert_name, [self.tau_part_num + 1, self.unit_len], tf.float32)
+        gate = tf.nn.relu(tf.multiply(gate, w_t) + b_t)
+
+        # conv with mask
+        kernel_ = tf.ones([self.unit_len], dtype=tf.float32, name=self.regressor_name + 'k_' + expert_name)
+        kernel = tf.reshape(kernel_, [1, int(kernel_.shape[0]), 1], name=self.regressor_name + 'kernel_' + expert_name)
+        # reshape layer
+        #gate = tf.reshape(gate, [-1, self.gate_layer, 1], name=self.regressor_name + 'gate_v1')
+        gate = tf.nn.relu(tf.squeeze(tf.nn.conv1d(gate, kernel, 1, 'VALID')) )
+
+        # quad:
+        #trid = self.tridiagonal(self.tau_part_num + 1)
+
+        # 1st value is p_0, others are z_0, z_1, ..., z_n
+        f_first = gate[:, :1]
+        Z = gate[:, 1:]
+        Z_zeros = tf.fill([tf.shape(Z)[0], 1], 0.0)
+        Z = tf.concat([Z_zeros, Z], 1)
+        D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
+
+        dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr, expert_name)
+        H = dist_tau * self.tau_max
+        DeltaP = tf.multiply(D[:, 1:], H) / 2.0
+        Px = tf.cumsum(tf.concat([f_first, DeltaP], 1), 1)
+
+        tau_first = tf.fill([tf.shape(partition_tau)[0], 1], 0.0)
+        partition_tau_ = tf.concat([tau_first, partition_tau[:, :-1]], 1)
+        indices = tf.searchsorted(partition_tau_, tau, side='left')
+        indices = tf.squeeze(indices) - 1
+        mask = tf.one_hot(indices, self.tau_part_num)
+
+        tau_exp = tf.tile(tau, [1, self.tau_part_num])
+        P = tf.multiply(Z[:, :-1], tau_exp - partition_tau_) + 0.5 * (Z[:, 1:] - Z[:, :-1]) / H * ((tau_exp - partition_tau_) ** 2) + Px[:, :-1]
+
+        prediction = tf.reduce_sum(tf.multiply(P, mask), 1)
+        # expand dim
+        prediction = tf.expand_dims(prediction, 1)
+
+
+        return prediction, gate
+
     def predict_vae_dnn(self, test_X, test_mapping, test_tau_gate):
         ''' Prediction
         '''
@@ -302,7 +413,7 @@ class SelNetPart(object):
 
         for lid in range(1, self.leaf_num, 1):
             expert_name = '_Expert_' + str(lid)
-            _, prediction_expert = self.expert_model(x_input, x_input_dr, tau_input, mapping, 
+            _, prediction_expert = self.expert_model(x_input, x_input_dr, tau_input, mapping,
                                                                 targets[:, lid: lid + 1], expert_name, lid)
             predictions_tensor += prediction_expert
 
@@ -395,7 +506,7 @@ class SelNetPart(object):
 
         for lid in range(1, self.leaf_num, 1):
             expert_name = '_Expert_' + str(lid)
-            loss_expert, prediction_expert = self.expert_model(x_input, x_input_dr, tau_input, mapping, 
+            loss_expert, prediction_expert = self.expert_model(x_input, x_input_dr, tau_input, mapping,
                                                                 targets[:, lid: lid + 1], expert_name, lid)
             predictions_tensor += prediction_expert
             loss += loss_expert
@@ -441,7 +552,7 @@ class SelNetPart(object):
                     learning_rate_vae_ = learning_rate_vae_ * (decay_rate ** (epoch / decay_step))
                 for b in range(n_batches):
                     batch_X, batch_mapping = self.getBatch_vae(b, self.batch_size, train_X, train_mapping)
-                    sess.run(optimizer_vae, feed_dict={x_input: batch_X, 
+                    sess.run(optimizer_vae, feed_dict={x_input: batch_X,
                                             mapping: batch_mapping,
                                             self.learning_rate_vae: learning_rate_vae_})
 
@@ -472,7 +583,7 @@ class SelNetPart(object):
                                                         targets: batch_y,
                                                         self.learning_rate_nn: learning_rate_nn_,
                                                         self.keep_prob: 0.9,
-						        self.vae_option: 1.0, 
+						        self.vae_option: 1.0,
                                                         self.input_num: self.batch_size})
                     else:
                         sess.run(optimizer_one, feed_dict={x_input: batch_original_X,
@@ -481,7 +592,7 @@ class SelNetPart(object):
                                                            tau_input: batch_tau_gate,
                                                            targets: batch_y,
                                                            self.learning_rate_nn: learning_rate_nn_,
-                                                           self.vae_option: 1.0, 
+                                                           self.vae_option: 1.0,
                                                            self.input_num: self.batch_size})
 
                     # check points
@@ -577,15 +688,272 @@ class SelNetPart(object):
                     valid_y_labels = np.hstack(valid_y)
 
                     print('Valid Epoch: {}, loss: {}'.format(i, __eval__(valid_predictions, valid_y_labels)))
-                    
+
                     # save to files
                     L = [[i_, j_] for i_, j_ in zip(valid_predictions, valid_y_labels)]
                     L = np.array(L)
-                    
+
                     save_file = self.valid_data_predictions_labels_file + str(i)
                     np.save(save_file, L)
 
 
+    def train_vae_dnn_quad(self, train_X, train_mapping, train_tau_gate, train_y,
+            valid_X, valid_mapping, valid_tau_gate, valid_y, test_X, test_mapping, test_tau_gate, test_y):
+
+        tf.reset_default_graph()
+
+        x_input = tf.placeholder(dtype=tf.float32, shape=[None, self.original_x_dim], name=self.regressor_name + 'original_X')
+
+        # tau_input is an one-hot vector -- maybe useless
+        # tau_input = tf.placeholder(dtype=tf.float32, shape=[None, self.tau_part_num], name=self.regressor_name + 'tau')
+        tau_input = tf.placeholder(dtype=tf.float32, shape=[None, 1], name=self.regressor_name + 'tau')
+
+        # mapping
+        mapping = tf.placeholder(dtype=tf.float32, shape=[None, self.leaf_num], name=self.regressor_name + 'mapping')
+
+        # init indices of threshold one-hot
+        init_indices = tf.placeholder(dtype=tf.int32, shape=[None], name=self.regressor_name + 'init_indices')
+
+        targets = tf.placeholder(dtype=tf.float32, shape=[None, self.leaf_num + 1], name=self.regressor_name + 'Targets')
+
+        # to control option of batch normalization
+        self.bn_phase = tf.placeholder(dtype=tf.bool, name=self.regressor_name + 'Phase')
+
+        # add dropout to avoid overfitting
+        self.keep_prob = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'Dropout')
+
+        # input number
+        self.input_num = tf.placeholder(dtype=tf.int32, name=self.regressor_name + 'input_num')
+
+        # VAE inference or training
+        self.vae_option = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'VAE_Option')
+
+        # set up learning rate
+        self.learning_rate_vae = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_vae')
+        self.learning_rate_nn = tf.placeholder(dtype=tf.float32, name=self.regressor_name + 'lr_nn')
+
+        # if use log, then process log operation
+        if self.log_option:
+            train_y = np.array(np.log(train_y + 1), dtype=np.float32)
+            test_y = np.array(np.log(test_y + 1), dtype=np.float32)
+            test_y = np.exp(test_y)
+            if len(test_y.shape) <= 1:
+                test_y = test_y[:, np.newaxis]
+
+        loss = 0
+        vae_loss, x_input_dr = self.__ae__(x_input, "AE")
+
+        # calculate dig
+        trid = self.tridiagonal(self.tau_part_num + 1)
+
+        # deal with 1st Expert
+        expert_name = '_Expert_0'
+        loss_expert, prediction_expert = self.expert_model_quad(x_input, x_input_dr, tau_input, mapping, targets[:, 0: 1], expert_name, 0, trid)
+        predictions_tensor = prediction_expert
+        loss += loss_expert
+
+        for lid in range(1, self.leaf_num, 1):
+            expert_name = '_Expert_' + str(lid)
+            loss_expert, prediction_expert = self.expert_model_quad(x_input, x_input_dr, tau_input, mapping,
+                                                                targets[:, lid: lid + 1], expert_name, lid, trid)
+            predictions_tensor += prediction_expert
+            loss += loss_expert
+
+        if self.loss_option == 'msle':
+            loss_one = 0.01 * loss + \
+                    tf.losses.mean_squared_error(predictions=tf.log(predictions_tensor + 1),
+                                                labels=tf.log(targets[:, -1:] + 1))
+        elif self.loss_option == 'huber':
+            loss_one = 0.01 * loss + \
+                    tf.losses.huber_loss(labels=targets[:, -1:], predictions=predictions_tensor, delta=1.345)
+        elif self.loss_option == 'huber_log':
+            loss_one = 0.01 * loss + \
+                    tf.losses.huber_loss(labels=tf.log(targets[:, -1:] + 1), predictions=tf.log(predictions_tensor + 1), delta=1.345)
+        else:
+            raise ValueError('Wrong Loss Function Option')
+
+        optimizer_vae = tf.train.AdamOptimizer(self.learning_rate_vae).minimize(vae_loss)
+        optimizer_expert = tf.train.AdamOptimizer(self.learning_rate_nn).minimize(loss)
+        optimizer_one = tf.train.AdamOptimizer(self.learning_rate_nn).minimize(loss_one)
+
+        # init all variables
+        init = tf.global_variables_initializer()
+
+        # Save the model
+        saver = tf.train.Saver()
+        step = 0
+
+        session_config = tf.ConfigProto(log_device_placement=True)
+        session_config.gpu_options.allow_growth = True
+        with tf.Session(config=session_config) as sess:
+            #with tf.Session() as sess:
+            # writer for events and checkpoints
+
+            sess.run(init)
+
+            # 1. first initialize VAE (unsupervised)
+            learning_rate_vae_ = self.learning_rate
+            decay_rate, decay_step = 0.96, 5
+            for epoch in range(self.epochs_vae):
+                n_batches = int(train_X.shape[0] / self.batch_size) + 1
+                if epoch != 0 and (epoch % decay_step == 0):
+                    learning_rate_vae_ = learning_rate_vae_ * (decay_rate ** (epoch / decay_step))
+                for b in range(n_batches):
+                    batch_X, batch_mapping = self.getBatch_vae(b, self.batch_size, train_X, train_mapping)
+                    sess.run(optimizer_vae, feed_dict={x_input: batch_X,
+                                            mapping: batch_mapping,
+                                            self.learning_rate_vae: learning_rate_vae_})
+
+                    # check points
+                    if b % 50 == 0:
+                        eval_loss = sess.run(vae_loss, feed_dict={x_input: batch_X,
+                                                                    mapping: batch_mapping,
+                                                                    self.learning_rate_vae: learning_rate_vae_})
+                        print('VAE Epoch: {}, batch: {}, loss: {}'.format(epoch, b, eval_loss))
+
+            # 2. fit all the training data to estimate
+            learning_rate_nn_ = self.learning_rate
+            epoch_decay_start = 200
+            epoch_one = 100
+            decay_rate, decay_step = 0.96, 10
+            for i in range(self.epochs):
+                n_batches = int(train_X.shape[0] / self.batch_size) + 1
+                for b in range(n_batches):
+                    # get current batch
+                    batch_original_X, batch_mapping, batch_tau_gate, batch_y = self.getBatch_(b,
+                            self.batch_size, train_X, train_mapping, train_tau_gate, train_y)
+                    batch_init_indices = np.zeros(self.batch_size, dtype=np.int32)
+                    if i < epoch_one:
+                        sess.run(optimizer_expert, feed_dict={x_input: batch_original_X,
+                                                        init_indices: batch_init_indices,
+                                                        mapping: batch_mapping,
+                                                        tau_input: batch_tau_gate,
+                                                        targets: batch_y,
+                                                        self.learning_rate_nn: learning_rate_nn_,
+                                                        self.keep_prob: 0.9,
+						        self.vae_option: 1.0,
+                                                        self.input_num: self.batch_size})
+                    else:
+                        sess.run(optimizer_one, feed_dict={x_input: batch_original_X,
+                                                           init_indices: batch_init_indices,
+                                                           mapping: batch_mapping,
+                                                           tau_input: batch_tau_gate,
+                                                           targets: batch_y,
+                                                           self.learning_rate_nn: learning_rate_nn_,
+                                                           self.vae_option: 1.0,
+                                                           self.input_num: self.batch_size})
+
+                    # check points
+                    if b % 50 == 0:
+                        [eval_loss, eval_loss_one] = sess.run([loss, loss_one], feed_dict={x_input: batch_original_X,
+                                                                init_indices: batch_init_indices,
+                                                                mapping: batch_mapping,
+                                                                tau_input: batch_tau_gate,
+                                                                targets: batch_y,
+                                                                self.learning_rate_nn: learning_rate_nn_,
+                                                                self.keep_prob: 1.0,
+						                self.vae_option: 1.0,
+                                                                self.input_num: self.batch_size})
+                        print('Epoch: {}, batch: {}, loss: {}'.format(i, b, eval_loss))
+
+                    step += 1
+
+                if i == epoch_decay_start:
+                    learning_rate_nn_ /= 4.0
+                if i > epoch_decay_start and (i % decay_step == 0):
+                    learning_rate_nn_ = learning_rate_nn_ * (decay_rate ** ((i - epoch_decay_start) / decay_step))
+
+                # save the model
+                if i % 100 == 0 or ((i + 1) == self.epochs):
+                    saver.save(sess, save_path=self.model_file, global_step=i)
+
+
+                # evaluate for testing data
+                if (i % 10 == 0) or ((i + 1) == self.epochs):
+                    '''
+                    # test !!!
+                    # split original X, dimreduce X, and threshold
+                    n_batch_test = int(test_X.shape[0] / self.batch_size) + 1
+                    for b_ in range(n_batch_test):
+                        batch_test_original_X, batch_test_mapping, batch_test_tau_gate, _ = self.getBatch_(
+                                b_, self.batch_size, test_X[:, :self.original_x_dim], test_mapping, test_tau_gate, test_y)
+                        batch_test_init_indices = np.zeros(self.batch_size, dtype=np.int32)
+                        predictions_batch = sess.run(predictions_tensor,
+                                                feed_dict={x_input: batch_test_original_X,
+                                                    init_indices: batch_test_init_indices,
+                                                    mapping: batch_test_mapping,
+                                                    tau_input: batch_test_tau_gate,
+                                                    self.vae_option: 0.0,
+                                                    self.input_num: self.batch_size})
+                        if b_ == 0:
+                            predictions = predictions_batch
+                        else:
+                            predictions = np.concatenate((predictions, predictions_batch), axis=0)
+
+                    # clip
+                    predictions = predictions[:test_X.shape[0]]
+
+                    # check whether log is used
+                    if self.log_option:
+                        predictions = np.exp(predictions)
+                    predictions = np.hstack(predictions)
+                    test_y_labels = np.hstack(test_y)
+
+                    print('Test Epoch: {}, loss: {}'.format(i, __eval__(predictions, test_y_labels)))
+
+                    # save to files
+                    L = [[i_, j_] for i_, j_ in zip(predictions, test_y_labels)]
+                    L = np.array(L)
+                    save_file = self.test_data_predictions_labels_file + str(i)
+                    np.save(save_file, L)
+                    '''
+                    # valid !!!
+                    # split original X, dimreduce X and threshold
+                    n_batch_valid = int(valid_X.shape[0] / self.batch_size) + 1
+                    for b_ in range(n_batch_valid):
+                        batch_valid_original_X, batch_valid_mapping, batch_valid_tau_gate, _ = self.getBatch_(
+                                b_, self.batch_size, valid_X[:, :self.original_x_dim], valid_mapping, valid_tau_gate, valid_y)
+                        batch_valid_init_indices = np.zeros(self.batch_size, dtype=np.int32)
+                        valid_predictions_batch = sess.run(predictions_tensor,
+                                                feed_dict={x_input: batch_valid_original_X,
+                                                    init_indices: batch_valid_init_indices,
+                                                    mapping: batch_valid_mapping,
+                                                    tau_input: batch_valid_tau_gate,
+                                                    self.vae_option: 0.0,
+                                                    self.input_num: self.batch_size})
+                        if b_ == 0:
+                            valid_predictions = valid_predictions_batch
+                        else:
+                            valid_predictions = np.concatenate((valid_predictions, valid_predictions_batch), axis=0)
+
+                    # clip
+                    valid_predictions = valid_predictions[:valid_X.shape[0]]
+
+                    # check whether log is used
+                    if self.log_option:
+                        valid_predictions = np.exp(valid_predictions)
+                    valid_predictions = np.hstack(valid_predictions)
+                    valid_y_labels = np.hstack(valid_y)
+
+                    print('Valid Epoch: {}, loss: {}'.format(i, __eval__(valid_predictions, valid_y_labels)))
+
+                    # save to files
+                    L = [[i_, j_] for i_, j_ in zip(valid_predictions, valid_y_labels)]
+                    L = np.array(L)
+
+                    save_file = self.valid_data_predictions_labels_file + str(i)
+                    np.save(save_file, L)
+
+
+    def train(self, train_X, train_tau, train_y, valid_X, valid_tau, valid_y, test_X, test_tau, test_y):
+        if self.spline_type == 'selnet_linear':
+            self.train_vae_dnn(train_X, train_tau, train_y, valid_X, valid_tau, valid_y)
+        elif self.spline_type == 'selnet_quad':
+            self.train_vae_dnn_quad(train_X, train_tau, train_y, valid_X, valid_tau, valid_y, test_X, test_tau, test_y)
+        elif self.spline_type == 'cardnet':
+            pass
+        else:
+            raise ValueError('wrong spline type')
 
     def getBatch_vae(self, batch_id, batch_size, X, Mapping):
         train_num = X.shape[0]
