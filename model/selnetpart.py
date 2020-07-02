@@ -870,7 +870,7 @@ class SelNetPart(object):
 
                 # evaluate for testing data
                 if (i % 10 == 0) or ((i + 1) == self.epochs):
-                    '''
+
                     # test !!!
                     # split original X, dimreduce X, and threshold
                     n_batch_test = int(test_X.shape[0] / self.batch_size) + 1
@@ -906,7 +906,7 @@ class SelNetPart(object):
                     L = np.array(L)
                     save_file = self.test_data_predictions_labels_file + str(i)
                     np.save(save_file, L)
-                    '''
+
                     # valid !!!
                     # split original X, dimreduce X and threshold
                     n_batch_valid = int(valid_X.shape[0] / self.batch_size) + 1
@@ -944,12 +944,13 @@ class SelNetPart(object):
                     save_file = self.valid_data_predictions_labels_file + str(i)
                     np.save(save_file, L)
 
-
-    def train(self, train_X, train_tau, train_y, valid_X, valid_tau, valid_y, test_X, test_tau, test_y):
+    def train(self, train_X, train_mapping, train_tau_gate, train_y, valid_X, valid_mapping, valid_tau_gate, valid_y,
+                        test_X, test_mapping, test_tau_gate, test_y):
         if self.spline_type == 'selnet_linear':
-            self.train_vae_dnn(train_X, train_tau, train_y, valid_X, valid_tau, valid_y)
+            self.train_vae_dnn(train_X, train_mapping, train_tau_gate, train_y, valid_X, valid_mapping, valid_tau_gate, valid_y)
         elif self.spline_type == 'selnet_quad':
-            self.train_vae_dnn_quad(train_X, train_tau, train_y, valid_X, valid_tau, valid_y, test_X, test_tau, test_y)
+            self.train_vae_dnn_quad(train_X, train_mapping, train_tau_gate, train_y, valid_X, valid_mapping, valid_tau_gate, valid_y,
+                        test_X, test_mapping, test_tau_gate, test_y)
         elif self.spline_type == 'cardnet':
             pass
         else:
