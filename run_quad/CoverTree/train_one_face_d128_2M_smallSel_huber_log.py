@@ -3,6 +3,7 @@ import sys
 sys.path.append('../../model')
 from selnetpart import *
 
+'''
 train_data_file = '../../data/face/train/face_CoverTree_trainingData.npy'
 test_data_file = '../../data/face/train/face_testingData.npy'
 valid_data_file = '../../data/face/train/face_valdiationData.npy'
@@ -10,6 +11,16 @@ valid_data_file = '../../data/face/train/face_valdiationData.npy'
 train_mapping_file = '../../data/face/train/face_covertree_mapping_train.npy'
 test_mapping_file = '../../data/face/train/face_covertree_mapping_test.npy'
 valid_mapping_file = '../../data/face/train/face_covertree_mapping_valid.npy' 
+'''
+
+train_data_file = '/data/yaoshuw/data_spherical/face_embedding/covertree/face_d128_2M_trainingDataL_smallSel_CoverTree-mixlabels.npy'
+test_data_file = '/data/yaoshuw/data_spherical/face_embedding/face_d128_2M_testingDataL_smallSel-mixlabels.npy'
+valid_data_file = '/data/yaoshuw/data_spherical/face_embedding/face_d128_2M_validationDataL_smallSel-mixlabels.npy'
+
+train_mapping_file = '/data/yaoshuw/data_spherical/face_embedding/covertree/face_d128_2M_smallSel_train_mapping.npy'
+test_mapping_file = '/data/yaoshuw/data_spherical/face_embedding/covertree/face_d128_2M_smallSel_test_mapping.npy'
+valid_mapping_file = '/data/yaoshuw/data_spherical/face_embedding/covertree/face_d128_2M_smallSel_valid_mapping.npy' 
+
 
 train_data_ = np.load(train_data_file)
 test_data_ = np.load(test_data_file)
@@ -29,10 +40,18 @@ leaf_num = 3
 loss_option = 'huber_log'
 partition_option = 'l2'
 
+'''
 # greedy cluster leaf data
 import pickle
 with open('../../data/face/train/face_covertree_greedy_cluster_leaf_IDS', 'rb') as f:
     greedy_clusters = pickle.load(f)
+'''
+
+# greedy cluster leaf data
+import pickle
+with open('/data/yaoshuw/data_spherical/face_embedding/covertree/face_d128_2M_covertree_greedy_cluster_leaf_IDS', 'rb') as f:
+    greedy_clusters = pickle.load(f)
+
 
 
 '''
@@ -133,8 +152,8 @@ vae_hidden_units = [512, 256, 128]
 
 batch_size = 512 #1024
 epochs = 1500
-epochs_vae = 100
-learning_rate = 0.00001
+epochs_vae = 1 #100
+learning_rate = 0.0001
 log_option = False
 tau_embedding_size = 5
 original_x_dim = train_original_X.shape[1]
@@ -152,9 +171,16 @@ regressor = SelNetPart(hidden_units, vae_hidden_units, batch_size, epochs, epoch
                             max_tau, tau_part_num, leaf_num, partition_option, loss_option)
 
 # train
-regressor.train_vae_dnn(train_original_X, train_mapping, train_taus, train_y, 
-                        valid_original_X, valid_mapping, valid_taus, valid_y)
+#regressor.train_vae_dnn(train_original_X, train_mapping, train_taus, train_y, 
+#                       valid_original_X, valid_mapping, valid_taus, valid_y)
 
 
 
+# change spline type to quad
+regressor.change_spline_type('selnet_quad')
+#regressor.change_spline_type('selnet_linear')
+
+regressor.train(train_original_X, train_mapping, train_taus[:, :1], train_y, valid_original_X, valid_mapping, valid_taus[:, :1], valid_y, test_original_X, test_mapping, test_taus[:, :1], test_y)
+#regressor.train(train_original_X, train_tau[:, :1], train_Y, valid_original_X, valid_tau[:, :1], valid_Y, test_original_X, test_tau[:, :1], test_Y)
+#regressor.train(train_original_X, train_tau, train_Y, valid_original_X, valid_tau, valid_Y, test_original_X, test_tau, test_Y)
 

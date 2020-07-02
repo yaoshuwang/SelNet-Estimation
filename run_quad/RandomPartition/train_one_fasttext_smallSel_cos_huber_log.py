@@ -3,9 +3,16 @@ import sys
 sys.path.append('../../model')
 from selnetpart import *
 
+'''
 train_data_file = '../../data/fasttext_cos/train/fasttext_cos_RandomPartition_trainingData.npy'
 test_data_file = '../../data/fasttext_cos/train/fasttext_cos_testingData.npy'
 valid_data_file = '../../data/fasttext_cos/train/fasttext_cos_valdiationData.npy'
+'''
+
+train_data_file = '/data/yaoshuw/data_spherical/fasttext_cos/randomPartition/fasttext_trainingDataL_smallSel_Cosine_RandomPartition-mixlabels.npy'
+test_data_file = '/data/yaoshuw/data_spherical/fasttext_cos/fasttext_testingDataL_smallSel_Cosine-mixlabels.npy'
+valid_data_file = '/data/yaoshuw/data_spherical/fasttext_cos/fasttext_validationDataL_smallSel_Cosine-mixlabels.npy'
+
 
 
 train_data_ = np.load(train_data_file)
