@@ -4,9 +4,15 @@ sys.path.append('../../model')
 from selnetpart import *
 
 
+'''
 train_data_file = '../../data/fasttext_eu/train/fasttext_eu_RandomPartition_trainingData.npy'
 test_data_file = '../../data/fasttext_eu/train/fasttext_eu_testingData.npy'
 valid_data_file = '../../data/fasttext_eu/train/fasttext_eu_valdiationData.npy'
+'''
+
+train_data_file = '/data/yaoshuw/data_spherical/fasttext/randomPartition/fasttext_trainingDataL_smallSel_RandomPartition-mixlabels.npy'
+test_data_file = '/data/yaoshuw/data_spherical/fasttext/smallSel/fasttext_testingDataL_smallSel-mixlabels.npy'
+valid_data_file = '/data/yaoshuw/data_spherical/fasttext/smallSel/fasttext_validationDataL_smallSel-mixlabels.npy'
 
 
 train_data_ = np.load(train_data_file)
