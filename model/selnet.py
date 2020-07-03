@@ -804,7 +804,13 @@ class SelNet(object):
             decay_rate, decay_step = 0.96, 10
             for i in range(self.epochs):
                 n_batches = int(train_X.shape[0] / self.batch_size) + 1
-                for b in range(n_batches):
+                # sample some batches
+                batch_num_ratio = 0.3
+                np.random.seed(i**2)
+                sc = np.random.choice(n_batches, int(n_batches * batch_num_ratio), replace=False)
+                batches_IDS = np.arange(n_batches)[sc]
+                #for b in range(n_batches):
+                for b in batches_IDs:
                     # get current batch
                     batch_original_X, batch_tau, batch_y = self.getBatch_(b,
                             self.batch_size, train_X, train_tau, train_y)
