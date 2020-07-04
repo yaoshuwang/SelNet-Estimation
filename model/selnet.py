@@ -6,7 +6,7 @@ import os
 import pickle
 #from tensorflow.python.ops import ops
 #from tensorflow.python.ops import math_ops
-from tensorflow.python.ops.losses.losses_impl import * #compute_weighted_loss
+#from tensorflow.python.ops.losses.losses_impl import * #compute_weighted_loss
 
 ''' use original layer-based to implement model
     The main difference is that here we initially the thresholds

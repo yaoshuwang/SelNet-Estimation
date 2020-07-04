@@ -13,7 +13,7 @@ import pickle
 '''
 from sklearn.decomposition import PCA
 from sklearn.metrics import *
-from tensorflow.python.framework import ops
+#from tensorflow.python.framework import ops
 from sklearn.cross_validation import train_test_split
 
 #from deepautoencoder import StackedAutoEncoder
