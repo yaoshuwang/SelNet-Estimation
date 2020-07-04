@@ -363,7 +363,7 @@ class SelNetPart(object):
         Z = gate[:, 1:]
         Z_zeros = tf.fill([tf.shape(Z)[0], 1], 0.0)
         Z = tf.concat([Z_zeros, Z], 1)
-        D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)))
+        D = tf.squeeze(tf.matmul(trid, tf.expand_dims(Z, 2)), 2)
 
         dist_tau, partition_tau = self._partition_threshold_quadratic(x_fea, x_fea_dr, expert_name)
         H = dist_tau * self.max_tau
