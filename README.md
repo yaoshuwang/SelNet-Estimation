@@ -1,5 +1,5 @@
 # SelNet for Cardinality estimation of Similarity selection
-souce code of KDD20 submission
+
 
 
 # Datasets
